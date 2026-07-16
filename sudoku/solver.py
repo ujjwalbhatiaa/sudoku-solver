@@ -3,12 +3,18 @@
 Design:
 - Each empty cell tracks a `candidates` bitmask (bits 1-9) of values not yet
   ruled out by its row/col/box peers.
-- Constraint propagation does two passes to a fixed point before any guessing:
+- Constraint propagation does three passes to a fixed point before any
+  guessing:
     1. Naked singles: a cell with exactly one candidate -> forced.
     2. Hidden singles: a unit where a value fits in only one remaining cell
        -> forced there even if that cell has other candidates too.
+    3. Naked pairs: two cells in a unit sharing an identical 2-candidate set
+       -> those two values are eliminated from every other cell in the unit.
   This alone solves "easy"/"medium" puzzles with zero backtracking, which is
   also how the difficulty rater in generator.py decides a puzzle is easy.
+  Naked pairs was added specifically to shrink candidate sets on puzzles
+  that naked+hidden singles alone can't fully crack, reducing how much the
+  backtracker has to search on "medium"/"hard" tiers (see README).
 - Backtracking picks the empty cell with the Minimum Remaining Values (MRV)
   -- fewest candidates -- which prunes the search tree far more aggressively
   than picking cells in row-major order, and is the standard technique for
@@ -93,6 +99,29 @@ def _propagate(cells: list[int], cands: list[int]) -> bool:
                     if cands[i] != bit:
                         cands[i] = bit
                         changed = True
+
+        # Naked pairs: if two cells in the same unit both have exactly the
+        # same 2 candidates, neither cell can end up as anything else, which
+        # means no *other* cell in that unit can hold either of those two
+        # values either. Eliminating them shrinks candidate sets elsewhere in
+        # the unit, which can in turn trigger more naked/hidden singles on
+        # the next pass. This is the one advanced technique the solver
+        # previously lacked (see README "Known limitations").
+        for unit in UNITS:
+            empties = [i for i in unit if cells[i] == 0]
+            pair_cells = [i for i in empties if _popcount(cands[i]) == 2]
+            for a_idx in range(len(pair_cells)):
+                a = pair_cells[a_idx]
+                for b in pair_cells[a_idx + 1:]:
+                    if cands[a] != cands[b]:
+                        continue
+                    pair_mask = cands[a]
+                    for i in empties:
+                        if i == a or i == b:
+                            continue
+                        if cands[i] & pair_mask:
+                            cands[i] &= ~pair_mask
+                            changed = True
 
     return True
 
