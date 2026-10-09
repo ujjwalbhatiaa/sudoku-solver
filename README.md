@@ -1,145 +1,47 @@
 # sudoku-solver
 
-A 9x9 Sudoku **solver + puzzle generator + difficulty rater**, implemented
-from scratch in pure Python (stdlib only). No external constraint-solver
-library, no numpy — the point of this project is the algorithms themselves:
-constraint propagation, bitmask candidate tracking, backtracking search with
-variable ordering, and unique-solution-preserving puzzle generation.
-
-## Why this design
-
-| Design choice | Why |
-|---|---|
-| **Bitmask candidate sets** (`int` with bits 1-9 set) instead of a `set[int]` per cell | Candidate operations (remove a value, check "is empty", count remaining) become single bitwise ops instead of set mutations — meaningfully faster in Python's interpreter loop, which matters because the solver re-derives candidates on every search node. |
-| **Constraint propagation before any guessing** (naked singles + hidden singles + naked pairs, iterated to a fixed point) | Real Sudoku puzzles — even hard ones — are mostly solvable by pure logic; guessing should be the last resort, not the primary strategy. Propagating first means the search tree the backtracker actually has to explore is far smaller, and it's *why* the difficulty rater can tell "logic-only" puzzles apart from "needs guessing" ones (`solved_by_propagation_alone`). Naked pairs (two cells in a unit sharing an identical 2-candidate set) was added to catch eliminations that naked/hidden singles alone miss, without paying for a full backtracking branch. |
-| **MRV (Minimum Remaining Values) variable ordering** for backtracking | Guessing the cell with the *fewest* remaining candidates first fails fast when wrong and succeeds fast when right — standard CSP practice, and the difference between solving "World's Hardest Sudoku" in tens of milliseconds vs. potentially much longer with naive row-major cell ordering. |
-| **Copy-on-write board state at each search node** (not undo/redo mutation) | Simpler to reason about and to test in isolation — no backtracking-specific "unwind" bugs are possible since a failed branch's state is simply discarded, never mutated back. |
-| **Digging holes with a live uniqueness check** (`count_solutions(..., limit=2) == 1`) rather than removing cells blindly | Removing clues without checking can silently produce a multi-solution puzzle — the standard failure mode of naive Sudoku generators. Checking after every removal (and reverting if it breaks uniqueness) is what actually guarantees the output puzzle has exactly one solution. |
-
-## Difficulty rating — an honest heuristic, not a guarantee
-
-`rate_difficulty()` combines two signals: whether pure logic (no guessing)
-solves the puzzle, and how many clues remain. This is a **reasonable proxy**,
-not a rigorous measure — real difficulty depends on *which* logical
-techniques are required (naked pairs, X-Wing, swordfish, etc.), which this
-solver doesn't implement or detect. The benchmark below shows this honestly:
-asking for `--difficulty hard` doesn't always yield a puzzle rated "hard" by
-this project's own rater — digging is randomized, and clue count alone is an
-imperfect predictor. This is documented rather than hidden, and is the same
-reason the CLI always prints the *requested* difficulty next to the
-*actual, measured* one.
-
-There's also no attempt to hit the proven 17-clue theoretical minimum for a
-uniquely-solvable puzzle ([McGuire et al., 2012](https://arxiv.org/abs/1201.0749))
-— `dig_holes` is a best-effort greedy dig, not a minimal-clue search (which
-is its own hard research problem).
+Solve, validate, and generate Sudoku puzzles in pure Python — no dependencies.
 
 ## Usage
 
 ```bash
-# Solve a puzzle (81-char string, '.' = blank)
-python3 cli.py solve "1.......2.9.4...5...6...7...5.9.3.......7.......85..4.7.....6...3...9.8...2.....1"
+# Solve a puzzle (81 chars: digits, '.' or '0' for empty cells)
+python sudoku.py solve "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
 
-# Solve from a file
-python3 cli.py solve puzzles/ai_escargot.txt
+# Validate a puzzle's givens
+python sudoku.py validate "550070000600195000098000060800060003400803001700020006060000280000419005000080079"
 
-# Generate a new puzzle
-python3 cli.py generate --difficulty hard --seed 42 --show-solution
+# Generate a new puzzle with a guaranteed unique solution
+python sudoku.py generate --difficulty medium
+python sudoku.py generate --difficulty hard --seed 7
 ```
+
+## How it works
+
+- **Solver**: backtracking search with the minimum-remaining-values (MRV)
+  heuristic and naked-single constraint propagation. Solves even notoriously
+  hard puzzles (e.g. Arto Inkala's "AI Escargot") in well under a second.
+- **Generator**: fills a complete grid with randomized backtracking, then digs
+  holes while the puzzle keeps exactly one solution (checked by counting
+  solutions capped at 2). Difficulty targets: easy 40, medium 32, hard 27 clues.
+- **Validation**: rejects puzzles whose givens violate any row, column, or
+  3×3 box constraint before searching.
+
+## API
 
 ```python
-from sudoku.solver import solve
-from sudoku.generator import generate_puzzle
+from sudoku import parse_grid, solve, generate, is_valid, format_grid
 
-puzzle, solution, difficulty = generate_puzzle(difficulty="medium", seed=1)
-result = solve(puzzle)
-assert result == solution
+puzzle = generate("medium", seed=42)
+solution = solve(puzzle)
+print(format_grid(solution))
 ```
 
-## Results (measured, `benchmarks/bench.py`)
-
-Regenerated by running the actual code — see `reports/BENCHMARKS.md` for the
-live copy. Re-run after adding naked-pairs propagation (below); absolute
-timings vary by machine, so treat these as internally-consistent relative
-numbers rather than a direct before/after comparison against older commits.
-
-### Solve time on known hard puzzles
-
-| Puzzle | Solve time |
-|---|---|
-| AI Escargot (Arto Inkala, 2006 — famously not solvable by singles alone) | 44.69 ms |
-| World's Hardest Sudoku (Arto Inkala, 2012) | 24.39 ms |
-| Empty board (81 blanks — worst case for search depth) | 10.38 ms |
-
-Interesting result: the **empty board still solves faster than either "hard"
-puzzle**. This makes sense once you think about it — an empty board has
-*no wrong branches to backtrack out of* (literally any valid digit works
-at every step), while a hand-crafted hard puzzle is specifically
-constructed so that naive-looking choices lead deep into dead ends before
-the search realizes it guessed wrong. Naked pairs helps most on puzzles
-that have exploitable 2-candidate structure without needing a full guess —
-World's Hardest Sudoku's solve time improved noticeably in this run, while
-AI Escargot (which is specifically constructed to defeat singles-and-pairs-style
-logic and force real guessing) didn't meaningfully benefit, as expected.
-
-### Generation time + achieved clue count by difficulty (10 seeded runs each)
-
-| Difficulty | Avg generation time | Avg clues remaining | Rated-difficulty distribution |
-|---|---|---|---|
-| easy (target 40 clues) | 18.1 ms | 40.0 | easy:10 |
-| medium (target 33 clues) | 25.3 ms | 33.0 | hard:1, medium:9 |
-| hard (target 28 clues) | 41.4 ms | 28.0 | hard:3, medium:7 |
-| expert (target 24 clues) | 83.3 ms | 24.5 | expert:6, hard:1, medium:3 |
-
-This is the honest result referenced above: the "hard" tier is rated
-"medium" by this project's own heuristic 7 times out of 10. Lower clue
-counts clearly correlate with harder puzzles on average (generation time
-and expert-rating frequency both climb monotonically), but clue count
-alone doesn't perfectly determine difficulty. Adding naked pairs didn't
-change this distribution — it's still a two-signal heuristic (see below),
-not a technique-by-technique classifier.
-
-## Testing
+## Tests
 
 ```bash
-pip install pytest
-python3 -m pytest tests/ -v
+pytest
 ```
 
-**27/27 tests passing**, covering:
-- Board parsing (compact string + grid formats), peer/unit geometry, validity checks
-- Solver correctness on AI Escargot, World's Hardest Sudoku, and an empty board
-- Unsolvable/inconsistent-board detection
-- `count_solutions` uniqueness checking, including that it stops early at the given limit
-- The propagation-only detector, cross-checked against the fact that AI Escargot is
-  a published example of a puzzle that specifically requires guessing
-- Generator: full-grid validity and seed-determinism, hole-digging preserving
-  uniqueness, and all four difficulty tiers producing valid, uniquely-solvable puzzles
-- Naked pairs: a forced 2-candidate pair in a unit correctly eliminates those
-  two values from every other cell in that unit, and leaves unrelated units
-  untouched
-
-## Project layout
-
-```
-sudoku/
-  board.py       # parsing, printing, peer/unit geometry, validity checks
-  solver.py      # candidate bitmasks, propagation, MRV backtracking, count_solutions
-  generator.py   # full-grid generation, hole-digging, difficulty rating
-cli.py           # solve / generate commands
-tests/           # 25 tests across board/solver/generator
-benchmarks/      # bench.py — regenerates reports/BENCHMARKS.md from real runs
-```
-
-## Known limitations
-
-- Difficulty rating is a two-signal heuristic (see above), not a technique-by-technique classifier.
-- Only one advanced technique is implemented: naked pairs. Hidden pairs & triples,
-  naked triples, X-Wing, swordfish, etc. are still not implemented — the solver falls
-  back to backtracking for anything beyond naked/hidden singles + naked pairs. This
-  is still always *correct*, just not a model of exactly how a human solves a hard puzzle.
-- `dig_holes` doesn't guarantee reaching the exact requested clue count, especially at the
-  "expert" end — for very low clue counts, most remaining removals break uniqueness and get
-  reverted, so the dig can stall a few clues above the target. This is logged, not silently
-  papered over (see `actual_difficulty` in `generate_puzzle`'s return value).
-- Single-threaded, no parallel search.
+16 tests: parsing, validation, solving (easy + AI Escargot), uniqueness
+counting, generation across difficulties, and edge cases.
