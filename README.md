@@ -14,6 +14,9 @@ python sudoku.py validate "55007000060019500009800006080006000340080300170002000
 # Generate a new puzzle with a guaranteed unique solution
 python sudoku.py generate --difficulty medium
 python sudoku.py generate --difficulty hard --seed 7
+
+# Get the next move on a partial puzzle, with a plain-English explanation
+python cli.py hint "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
 ```
 
 ## How it works
@@ -26,6 +29,10 @@ python sudoku.py generate --difficulty hard --seed 7
   solutions capped at 2). Difficulty targets: easy 40, medium 32, hard 27 clues.
 - **Validation**: rejects puzzles whose givens violate any row, column, or
   3×3 box constraint before searching.
+- **Hints** (`sudoku/hint.py`, `cli.py hint`): suggests the single most
+  instructive next move on a partial board -- naked single first, then hidden
+  single, otherwise the most constrained cell to guess (MRV) -- each with a
+  plain-English explanation naming the cell, the digit, and the reasoning.
 
 ## API
 
@@ -43,5 +50,6 @@ print(format_grid(solution))
 pytest
 ```
 
-16 tests: parsing, validation, solving (easy + AI Escargot), uniqueness
-counting, generation across difficulties, and edge cases.
+22 tests: parsing, validation, solving (easy + AI Escargot), uniqueness
+counting, generation across difficulties, next-move hints (naked single,
+hidden single, MRV fallback, solved/invalid/dead-end boards), and edge cases.

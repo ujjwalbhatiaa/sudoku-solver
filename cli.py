@@ -4,6 +4,7 @@
 Usage:
     python cli.py solve puzzle.txt
     python cli.py solve "53..7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79"
+    python cli.py hint "53..7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79"
     python cli.py generate --difficulty medium
     python cli.py generate --difficulty hard --seed 42
 """
@@ -16,7 +17,18 @@ import time
 
 from sudoku.board import is_valid_complete, parse, pretty, to_string
 from sudoku.generator import generate_puzzle
+from sudoku.hint import hint
 from sudoku.solver import solve
+
+
+def _load_puzzle(spec: str) -> list[int]:
+    if spec.endswith(".txt") or "\n" not in spec and len(spec) != 81:
+        try:
+            with open(spec) as f:
+                return parse(f.read())
+        except FileNotFoundError:
+            pass
+    return parse(spec)
 
 
 def cmd_solve(args: argparse.Namespace) -> int:
@@ -48,6 +60,19 @@ def cmd_solve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hint(args: argparse.Namespace) -> int:
+    cells = _load_puzzle(args.puzzle)
+    h = hint(cells)
+    if h is None:
+        print("No hint available: the board is solved, invalid, or stuck.")
+        return 1
+    print(h.explanation)
+    print()
+    print("Board:")
+    print(pretty(cells))
+    return 0
+
+
 def cmd_generate(args: argparse.Namespace) -> int:
     puzzle, solution, actual_difficulty = generate_puzzle(difficulty=args.difficulty, seed=args.seed)
     clues = sum(1 for v in puzzle if v != 0)
@@ -71,6 +96,10 @@ def main(argv: list[str] | None = None) -> int:
     p_solve = sub.add_parser("solve", help="solve a puzzle from a file or inline string")
     p_solve.add_argument("puzzle", help="path to a .txt puzzle file, or an inline 81-char/9-line puzzle")
     p_solve.set_defaults(func=cmd_solve)
+
+    p_hint = sub.add_parser("hint", help="suggest the next move, with an explanation")
+    p_hint.add_argument("puzzle", help="path to a .txt puzzle file, or an inline 81-char/9-line puzzle")
+    p_hint.set_defaults(func=cmd_hint)
 
     p_gen = sub.add_parser("generate", help="generate a new puzzle")
     p_gen.add_argument("--difficulty", choices=["easy", "medium", "hard", "expert"], default="medium")
