@@ -17,6 +17,9 @@ python sudoku.py generate --difficulty hard --seed 7
 
 # Get the next move on a partial puzzle, with a plain-English explanation
 python cli.py hint "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+
+# Print the full step-by-step solution, one explained move per line
+python cli.py explain "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
 ```
 
 ## How it works
@@ -33,6 +36,10 @@ python cli.py hint "530070000600195000098000060800060003400803001700020006060000
   instructive next move on a partial board -- naked single first, then hidden
   single, otherwise the most constrained cell to guess (MRV) -- each with a
   plain-English explanation naming the cell, the digit, and the reasoning.
+- **Explanations** (`sudoku/explain.py`, `cli.py explain`): replays the whole
+  solution as an ordered, human-readable trace -- one explained step per
+  empty cell. Guesses are resolved against the precomputed solution so the
+  trace shows the successful path, like a textbook worked solution.
 
 ## API
 
@@ -50,6 +57,9 @@ print(format_grid(solution))
 pytest
 ```
 
-22 tests: parsing, validation, solving (easy + AI Escargot), uniqueness
-counting, generation across difficulties, next-move hints (naked single,
-hidden single, MRV fallback, solved/invalid/dead-end boards), and edge cases.
+61 tests: parsing, validation, solving (easy + AI Escargot), uniqueness
+counting, generation across difficulties, difficulty rating (easy/medium/
+hard/expert tiers), next-move hints (naked single, hidden single, MRV
+fallback, solved/invalid/dead-end boards), step-by-step solution traces
+(replay fidelity, guess handling on Escargot, invalid/unsolvable input),
+and edge cases.
