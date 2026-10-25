@@ -137,3 +137,42 @@ def test_rate_difficulty_expert():
     cells = parse(HARD)
     assert not solved_by_propagation_alone(cells)
     assert rate_difficulty(cells) == "expert"
+
+
+# --- validate CLI ------------------------------------------------------------
+
+def _validate(puzzle, capsys):
+    from types import SimpleNamespace
+    from cli import cmd_validate
+    rc = cmd_validate(SimpleNamespace(puzzle=puzzle))
+    return rc, capsys.readouterr().out
+
+
+def test_validate_unique_solution(capsys):
+    rc, out = _validate(EASY, capsys)
+    assert rc == 0
+    assert "VALID: unique solution" in out
+    assert "clues=30" in out
+
+
+def test_validate_duplicate_givens(capsys):
+    # EASY starts "53..."; make row 1 read "553..." instead
+    bad = "553" + EASY[3:]
+    rc, out = _validate(bad, capsys)
+    assert rc == 1
+    assert "INVALID" in out
+
+
+def test_validate_consistent_but_unsolvable(capsys):
+    # r1c9 has no candidate: row 1 holds 1-8, column 9 holds 9 (at r2c9).
+    board = "12345678." + "........9" + "." * 63
+    assert len(board) == 81
+    rc, out = _validate(board, capsys)
+    assert rc == 1
+    assert "UNSOLVABLE" in out
+
+
+def test_validate_empty_board_multiple_solutions(capsys):
+    rc, out = _validate("." * 81, capsys)
+    assert rc == 2
+    assert "MULTIPLE SOLUTIONS" in out
