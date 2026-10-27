@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from sudoku.board import is_valid_complete, parse
-from sudoku.solver import count_solutions, solve, solved_by_propagation_alone, _propagate, _candidates_from_scratch
+from sudoku.solver import count_solutions, solve, solve_with_stats, solved_by_propagation_alone, _propagate, _candidates_from_scratch
 
 AI_ESCARGOT = (
     "1.......2.9.4...5...6...7...5.9.3.......7.......85..4.7.....6...3...9.8...2.....1"
@@ -131,3 +131,32 @@ def test_naked_pairs_does_not_touch_other_units():
     before = cands[unrelated]
     _propagate(cells[:], cands)
     assert cands[unrelated] == before
+
+
+# --- solve_with_stats -------------------------------------------------------
+
+def test_solve_with_stats_propagation_only_board_needs_no_branching():
+    solved = solve(parse(NO_CLUES))
+    assert solved is not None
+    one_blank = solved[:]
+    one_blank[0] = 0
+    result, stats = solve_with_stats(one_blank)
+    assert result == solved
+    assert stats["search_nodes"] == 1
+    assert stats["branch_nodes"] == 0
+
+
+def test_solve_with_stats_hard_puzzle_branches():
+    result, stats = solve_with_stats(parse(AI_ESCARGOT))
+    assert result is not None
+    assert is_valid_complete(result)
+    assert result == solve(parse(AI_ESCARGOT))
+    assert stats["branch_nodes"] > 0
+    assert stats["search_nodes"] > stats["branch_nodes"]
+
+
+def test_solve_with_stats_inconsistent_board_costs_no_search():
+    bad = parse("11" + "." * 79)
+    result, stats = solve_with_stats(bad)
+    assert result is None
+    assert stats == {"search_nodes": 0, "branch_nodes": 0}

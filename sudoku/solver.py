@@ -126,10 +126,14 @@ def _propagate(cells: list[int], cands: list[int]) -> bool:
     return True
 
 
-def _search(cells: list[int], cands: list[int], limit: int, count: list[int], solutions: list[list[int]] | None) -> None:
+def _search(cells: list[int], cands: list[int], limit: int, count: list[int], solutions: list[list[int]] | None, stats: dict | None = None) -> None:
     """Backtracking search with MRV. Appends completed boards to `solutions`
     (if provided) and increments count[0] for each one found, stopping once
-    count[0] reaches `limit`."""
+    count[0] reaches `limit`. When `stats` is given, counts every search node
+    visited (`search_nodes`) and every node that had to branch on a guess
+    (`branch_nodes`, i.e. propagation alone did not finish the board)."""
+    if stats is not None:
+        stats["search_nodes"] += 1
     if count[0] >= limit:
         return
 
@@ -159,6 +163,8 @@ def _search(cells: list[int], cands: list[int], limit: int, count: list[int], so
     if best_n == 0:
         return  # dead end
 
+    if stats is not None:
+        stats["branch_nodes"] += 1
     for v in range(1, 10):
         if not (work_cands[best_i] & _bit(v)):
             continue
@@ -168,7 +174,7 @@ def _search(cells: list[int], cands: list[int], limit: int, count: list[int], so
         next_cands[best_i] = 0
         for p in PEERS[best_i]:
             next_cands[p] &= ~_bit(v)
-        _search(next_cells, next_cands, limit, count, solutions)
+        _search(next_cells, next_cands, limit, count, solutions, stats)
         if count[0] >= limit:
             return
 
@@ -183,6 +189,27 @@ def solve(cells: list[int]) -> list[int] | None:
     count = [0]
     _search(cells, cands, limit=1, count=count, solutions=solutions)
     return solutions[0] if solutions else None
+
+
+def solve_with_stats(cells: list[int]) -> tuple[list[int] | None, dict]:
+    """Solve like `solve`, but also report how hard the search was.
+
+    Returns (solution_or_None, stats) where stats has:
+    - `search_nodes`: _search calls made (1 for a puzzle propagation solves).
+    - `branch_nodes`: nodes that had to guess (0 when propagation alone
+      finishes the board; >0 for puzzles that need backtracking).
+    Inconsistent givens short-circuit with zero nodes, matching `solve`'s
+    None result without paying for a search.
+    """
+    stats = {"search_nodes": 0, "branch_nodes": 0}
+    if not is_consistent(cells):
+        return None, stats
+    cands = _candidates_from_scratch(cells)
+    solutions: list[list[int]] = []
+    count = [0]
+    _search(cells, cands, limit=1, count=count, solutions=solutions,
+            stats=stats)
+    return (solutions[0] if solutions else None), stats
 
 
 def count_solutions(cells: list[int], limit: int = 2) -> int:

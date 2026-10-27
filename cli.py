@@ -22,7 +22,7 @@ from sudoku.board import is_consistent, is_valid_complete, parse, pretty, to_str
 from sudoku.explain import explain_solve
 from sudoku.generator import generate_puzzle
 from sudoku.hint import hint
-from sudoku.solver import count_solutions, solve
+from sudoku.solver import count_solutions, solve, solve_with_stats
 
 
 def _load_puzzle(spec: str) -> list[int]:
@@ -59,6 +59,22 @@ def cmd_solve(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Solved in {elapsed * 1000:.2f} ms:")
+    print(pretty(result))
+    assert is_valid_complete(result)
+    return 0
+
+
+def cmd_stats(args: argparse.Namespace) -> int:
+    cells = _load_puzzle(args.puzzle)
+    start = time.perf_counter()
+    result, stats = solve_with_stats(cells)
+    elapsed = time.perf_counter() - start
+    if result is None:
+        print("No solution exists for this puzzle.")
+        return 1
+    print(f"Solved in {elapsed * 1000:.2f} ms "
+          f"({stats['search_nodes']} search nodes, "
+          f"{stats['branch_nodes']} branching nodes):")
     print(pretty(result))
     assert is_valid_complete(result)
     return 0
@@ -144,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     p_solve = sub.add_parser("solve", help="solve a puzzle from a file or inline string")
     p_solve.add_argument("puzzle", help="path to a .txt puzzle file, or an inline 81-char/9-line puzzle")
     p_solve.set_defaults(func=cmd_solve)
+
+    p_stats = sub.add_parser("stats", help="solve a puzzle and report search effort (nodes, branches)")
+    p_stats.add_argument("puzzle", help="path to a .txt puzzle file, or an inline 81-char/9-line puzzle")
+    p_stats.set_defaults(func=cmd_stats)
 
     p_hint = sub.add_parser("hint", help="suggest the next move, with an explanation")
     p_hint.add_argument("puzzle", help="path to a .txt puzzle file, or an inline 81-char/9-line puzzle")
